@@ -1,0 +1,12 @@
+{
+  "name": "ezpzdb",
+  "version": "1.0.0",
+  "description": "Easy Peasy Lemon Squeezy Databasey Managementy",
+  "main": "index.js",
+  "repository": "https://github.com/xdevs23/node-ezpzdb",
+  "author": "Simao Gomes Viana",
+  "license": "MIT",
+  "dependencies": {
+    "mkdir-p": "^0.0.7"
+  }
+}

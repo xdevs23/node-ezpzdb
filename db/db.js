@@ -3,30 +3,6 @@ const mkdir = require('mkdir-p')
 const fs = require('fs')
 var util = null
 
-const storage = {
-  tables: {
-
-  },
-  dir: '',
-  exists: false
-}
-
-const paths = {
-  tabledir (table) {
-    return `${storage.dir}/tables/${table}`
-  },
-  indexfile (table) {
-    return `${paths.tabledir(table)}/index`
-  },
-  tablefile (table) {
-    return `${paths.tabledir(table)}/db`
-  }
-}
-
-const index = {
-  tables: {}
-}
-
 function throwAndLog(msg) {
   console.error(msg)
   throw Error(msg)
@@ -64,163 +40,199 @@ function readFilePartialSync (filename, start, length) {
   return buf
 }
 
-module.exports = (dir = 'datastorage') => {
-  log("Easy Peasy Lemon Squeezy Databasey")
-  log("Here to serve.")
-  log("")
-  log("Initializing...")
-  mkdir.sync(dir)
-  storage.dir = dir
-  // This file is used to indicate that the
-  // database has already been created and is ready to use
-  paths.stamp = `${storage.dir}/.stamp`
-  if (storage.exists = fs.existsSync(paths.stamp)) {
-    log(`Database exists, reading index into memory...`)
-    let tableNames = fs.readdirSync(paths.tabledir(''))
-    tableNames.forEach(tableName => {
-      index.tables[tableName] =
-        JSON.parse(fs.readFileSync(paths.indexfile(tableName)))
-      storage.tables[tableName] = {
-        lastId: index.tables[tableName].lastId,
-        items: []
+class Database {
+
+  constructor (dir) {
+    let thiz = this
+    this.storage = {
+      tables: {
+
+      },
+      dir,
+      exists: false
+    }
+    this.index = {
+      tables: {}
+    }
+    this.paths = {
+      tabledir (table) {
+        return `${thiz.storage.dir}/tables/${table}`
+      },
+      indexfile (table) {
+        return `${thiz.paths.tabledir(table)}/index`
+      },
+      tablefile (table) {
+        return `${thiz.paths.tabledir(table)}/db`
       }
-    })
-  } else {
-    log(`New database, will be created once data is persisted`)
+    }
+    this.initialize()
   }
-  let dbobj = {
-    createTable (table) {
-      storage.tables[table] = {
-        lastId: 0,
-        items: []
-      }
-    },
-    persistData () {
-      return new Promise((resolve, reject) => {
-        if (!storage.exists) {
-          log("Now it's time to create a new database")
-          fs.writeFile(paths.stamp, `${Date.now()}`, err => {
-            if (err) reject(err)
-          })
-          storage.exists = true
-        }
-        for (let tableName in storage.tables) {
-          let table = storage.tables[tableName]
-          mkdir.sync(paths.tabledir(tableName))
-          if (!index.tables[tableName]) {
-            index.tables[tableName] = { index: {} }
-          }
-          index.tables[tableName].lastId = table.lastId
-          let offset = 0
-          let file = appendFile(paths.tablefile(tableName))
-          for (entryIx in table.items) {
-            let entry = table.items[entryIx]
-            // Skip already existing entries
-            if (index.tables[tableName].index[`${entry.id}`]) {
-              continue
-            }
-            // Start off with the last offset + its entry's length
-            else if (Object.keys(index.tables[tableName].index).length > 0) {
-              let lastItem = index.tables[tableName].index[`${table.beforeLastId}`]
-              offset = lastItem.o + lastItem.l
-            }
-            // Create the string to save the data
-            let jsonText = JSON.stringify(entry)
-            // Create an index entry so that we can address this quickly
-            index.tables[tableName].index[`${entry.id}`] = {
-              o: offset,
-              l: jsonText.length
-            }
-            // Append the entry to the file
-            file.append(jsonText)
-            // And now grow the offset to continue
-            offset += jsonText.length
-          }
-          file.close()
-          fs.writeFile(paths.indexfile(tableName),
-            JSON.stringify(index.tables[tableName]), err => {
-              if (err) {
-                reject(err)
-              } else {
-                // Now that the data is persisted, remove it from memory
-                table.items = []
-              }
-            }
-          )
+
+  initialize() {
+    log("Easy Peasy Lemon Squeezy Databasey")
+    log("Here to serve.")
+    log("")
+    log("Initializing...")
+    mkdir.sync(this.storage.dir)
+    // This file is used to indicate that the
+    // database has already been created and is ready to use
+    this.paths.stamp = `${this.storage.dir}/.stamp`
+    if (this.storage.exists = fs.existsSync(this.paths.stamp)) {
+      log(`Database exists, reading index into memory...`)
+      let tableNames = fs.readdirSync(this.paths.tabledir(''))
+      tableNames.forEach(tableName => {
+        this.index.tables[tableName] =
+          JSON.parse(fs.readFileSync(this.paths.indexfile(tableName)))
+        this.storage.tables[tableName] = {
+          lastId: this.index.tables[tableName].lastId,
+          items: []
         }
       })
-    },
-    insert (table, data) {
-      if (!storage.tables[table]) {
-        dbobj.createTable(table)
-      }
-      let tbl = storage.tables[table]
-      tbl.beforeLastId = tbl.lastId
-      data.id = ++tbl.lastId
-      tbl.items.push(data)
-      dbobj.persistData().then(() => {}, e => throwAndLog(e))
-      return tbl.lastId
-    },
-    update (table, data) {
-      if (data.id === undefined || data.id === 0) {
-        throw Error('id must exist and be at least 1')
-      }
-      let indexItem = index.tables[table].index[`${data.id}`]
-      if (!indexItem) {
-        return {}
-      }
-      let filename = paths.tablefile(table)
-      let newData = JSON.stringify(data)
-      let lastItem = index.tables[table]
-        .index[`${storage.tables[table].lastId}`]
-      indexItem.o = lastItem.o + lastItem.l
-      indexItem.l = newData.length
-      let file = appendFile(filename)
-      file.append(newData)
-      file.close()
-      fs.writeFileSync(paths.indexfile(table),
-        JSON.stringify(index.tables[table]))
-      return dbobj.get(table, data.id)
-    },
-    remove (table, id) {
-      if (id === undefined || id === 0) {
-        throw Error('id must exist and be at least 1')
-      }
-      let tableFolder = `${dir}/${table}`
-      let folders = fs.readdirSync(tableFolder)
-      for (let folderIx in folders) {
-        let folder = folders[folderIx]
-        let toUnlink = `${tableFolder}/${folder}/${id}`
-        if (!fs.existsSync(toUnlink)) return false
-        fs.unlinkSync(toUnlink)
-      }
-      return true
-    },
-    get (table, id) {
-      if (id === undefined || id === 0) {
-        throw Error('id must exist and be at least 1')
-      }
-      let indexEntry = index.tables[table].index[`${id}`]
-      if (!indexEntry) {
-        return {}
-      }
-      return JSON.parse(
-        readFilePartialSync(paths.tablefile(table),
-        indexEntry.o, indexEntry.l))
-    },
-    getAll (table) {
-      let result = []
-      let tableIndex = index.tables[table].index
-      var fd = fs.openSync(paths.tablefile(table), 'r');
-      for (let tableIndexIx in tableIndex) {
-        let entry = tableIndex[tableIndexIx]
-        var buf = new Buffer(entry.l);
-        fs.readSync(fd, buf, 0, entry.l, entry.o);
-        result.push(JSON.parse(buf))
-      }
-      fs.close(fd);
-      return result
+    } else {
+      log(`New database, will be created once data is persisted`)
     }
   }
-  return dbobj
+
+  createTable (table) {
+    this.storage.tables[table] = {
+      lastId: 0,
+      items: []
+    }
+  }
+
+  persistData () {
+    return new Promise((resolve, reject) => {
+      if (!this.storage.exists) {
+        log("Now it's time to create a new database")
+        fs.writeFile(this.paths.stamp, `${Date.now()}`, err => {
+          if (err) reject(err)
+        })
+        this.storage.exists = true
+      }
+      for (let tableName in this.storage.tables) {
+        let table = this.storage.tables[tableName]
+        mkdir.sync(this.paths.tabledir(tableName))
+        if (!this.index.tables[tableName]) {
+          this.index.tables[tableName] = { index: {} }
+        }
+        this.index.tables[tableName].lastId = table.lastId
+        let offset = 0
+        let file = appendFile(this.paths.tablefile(tableName))
+        for (let entryIx in table.items) {
+          let entry = table.items[entryIx]
+          // Skip already existing entries
+          if (this.index.tables[tableName].index[`${entry.id}`]) {
+            continue
+          }
+          // Start off with the last offset + its entry's length
+          else if (Object.keys(this.index.tables[tableName].index).length > 0) {
+            let lastItem = this.index.tables[tableName].index[`${table.beforeLastId}`]
+            offset = lastItem.o + lastItem.l
+          }
+          // Create the string to save the data
+          let jsonText = JSON.stringify(entry)
+          // Create an index entry so that we can address this quickly
+          this.index.tables[tableName].index[`${entry.id}`] = {
+            o: offset,
+            l: jsonText.length
+          }
+          // Append the entry to the file
+          file.append(jsonText)
+          // And now grow the offset to continue
+          offset += jsonText.length
+        }
+        file.close()
+        fs.writeFile(this.paths.indexfile(tableName),
+          JSON.stringify(this.index.tables[tableName]), err => {
+            if (err) {
+              reject(err)
+            } else {
+              // Now that the data is persisted, remove it from memory
+              table.items = []
+            }
+          }
+        )
+      }
+    })
+  }
+
+  insert (table, data) {
+    if (!this.storage.tables[table]) {
+      this.createTable(table)
+    }
+    let tbl = this.storage.tables[table]
+    tbl.beforeLastId = tbl.lastId
+    data.id = ++tbl.lastId
+    tbl.items.push(data)
+    this.persistData().then(() => {}, e => throwAndLog(e))
+    return tbl.lastId
+  }
+
+  update (table, data) {
+    if (data.id === undefined || data.id === 0) {
+      throw Error('id must exist and be at least 1')
+    }
+    let indexItem = this.index.tables[table].index[`${data.id}`]
+    if (!indexItem) {
+      return {}
+    }
+    let filename = this.paths.tablefile(table)
+    let newData = JSON.stringify(data)
+    let lastItem = this.index.tables[table]
+      .index[`${this.storage.tables[table].lastId}`]
+    indexItem.o = lastItem.o + lastItem.l
+    indexItem.l = newData.length
+    let file = appendFile(filename)
+    file.append(newData)
+    file.close()
+    fs.writeFileSync(this.paths.indexfile(table),
+      JSON.stringify(this.index.tables[table]))
+    return this.get(table, data.id)
+  }
+
+  remove (table, id) {
+    if (id === undefined || id === 0) {
+      throw Error('id must exist and be at least 1')
+    }
+    let tableFolder = `${dir}/${table}`
+    let folders = fs.readdirSync(tableFolder)
+    for (let folderIx in folders) {
+      let folder = folders[folderIx]
+      let toUnlink = `${tableFolder}/${folder}/${id}`
+      if (!fs.existsSync(toUnlink)) return false
+      fs.unlinkSync(toUnlink)
+    }
+    return true
+  }
+
+  get (table, id) {
+    if (id === undefined || id === 0) {
+      throw Error('id must exist and be at least 1')
+    }
+    let indexEntry = this.index.tables[table].index[`${id}`]
+    if (!indexEntry) {
+      return {}
+    }
+    return JSON.parse(
+      readFilePartialSync(this.paths.tablefile(table),
+      indexEntry.o, indexEntry.l))
+  }
+
+  getAll (table) {
+    let result = []
+    let tableIndex = this.index.tables[table].index
+    var fd = fs.openSync(this.paths.tablefile(table), 'r');
+    for (let tableIndexIx in tableIndex) {
+      let entry = tableIndex[tableIndexIx]
+      var buf = new Buffer(entry.l);
+      fs.readSync(fd, buf, 0, entry.l, entry.o);
+      result.push(JSON.parse(buf))
+    }
+    fs.close(fd);
+    return result
+  }
+}
+
+module.exports = (dir = 'datastorage') => {
+  return new Database(dir)
 }

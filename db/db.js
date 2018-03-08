@@ -195,14 +195,12 @@ class Database {
     if (id === undefined || id === 0) {
       throw Error('id must exist and be at least 1')
     }
-    let tableFolder = `${dir}/${table}`
-    let folders = fs.readdirSync(tableFolder)
-    for (let folderIx in folders) {
-      let folder = folders[folderIx]
-      let toUnlink = `${tableFolder}/${folder}/${id}`
-      if (!fs.existsSync(toUnlink)) return false
-      fs.unlinkSync(toUnlink)
+    let tableIndex = this.index.tables[table]
+    if (!tableIndex || !tableIndex.index[`${id}`]) {
+      return false
     }
+    delete tableIndex.index[`${id}`]
+    this.persistData()
     return true
   }
 

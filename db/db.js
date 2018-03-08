@@ -1,3 +1,4 @@
+'use strict'
 
 const mkdir = require('mkdir-p')
 const fs = require('fs')

@@ -1,0 +1,8 @@
+{
+  "name": "ezpzdb",
+  "version": "1.0.0",
+  "description": "Easy Peasy Database",
+  "main": "index.js",
+  "license": "MIT",
+  "author": "Simao Gomes Viana"
+}

@@ -4,5 +4,13 @@
   "description": "Easy Peasy Database",
   "main": "index.js",
   "license": "MIT",
-  "author": "Simao Gomes Viana"
+  "author": "Simao Gomes Viana",
+  "dependencies": {
+    "chalk": "^2.3.2",
+    "figures": "^2.0.0",
+    "log-symbols": "^2.2.0",
+    "mkdir-p": "^0.0.7",
+    "n-readlines": "^0.2.8"
+  },
+  "optionalDependencies": {}
 }

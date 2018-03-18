@@ -6,6 +6,11 @@ Short: ezpzdb
 Easy to use, lightweight and standalone database
 management system for Node
 
+*IMPORTANT:* Please do not use this in production, yet.
+It has not been tested on the long run and could still have bugs.
+Consider this as a WIP until this notice is removed.
+Of course you are welcome to test this out on the long run
+and give feedback on it.
 
 ### License
 

@@ -8,6 +8,8 @@ const logsym = require('log-symbols')
 const figures = require('figures')
 const util = require('util')
 
+var requestedShutdowns = 0
+
 /**
  * Interval used to check if data is ready to be persisted.
  * This does not mean that data WILL be written out after
@@ -101,6 +103,8 @@ module.exports = class Database {
     this.deltaTimeToSave = deltaTimeToSave * 60 * 1000
     this.saveDataInterval = saveDataInterval
     this.cacheCollectInterval = cacheCollectInterval * 1000
+    this.forceSave = false
+    this.noMoreSaves = false
     // Paths
     let paths = this.paths = {
       tableindex (table) {
@@ -121,10 +125,43 @@ module.exports = class Database {
     }
     // Read the table indices etc. into memory if the database exists
     this.initialize()
+    process.on("SIGINT",  () => this.gracefulShutdown());
+    process.on("SIGQUIT", () => this.gracefulShutdown());
+    process.on("SIGTERM", () => this.gracefulShutdown());
+    process.on("SIGABRT", () => this.gracefulShutdown());
+    process.on("SIGHUP",  () => this.gracefulShutdown());
     // Now start the timer for data saves
     this.setTimeoutForSaveData()
     // And the timer for the cache
     this.setTimeoutForCache()
+  }
+
+  gracefulShutdown () {
+    log(logsym.info, `Graceful shutdown requested (${this.dbpath})`)
+    requestedShutdowns++
+    log(' ', 'Saving data to disk...')
+    this.forceSave = true
+    this.noMoreSaves = true
+    this.saveData(() => {
+      requestedShutdowns--
+      if (requestedShutdowns !== 0) {
+        log(logsym.info, `Databases left to save data: ${requestedShutdowns}`)
+      } else {
+        log(logsym.success, 'All data has been saved to disk.')
+        log(logsym.info, 'This process will exit shortly')
+        // This is to make sure that all data is REALLY written out
+        // The exit is delayed and scheduled out so that it eventually
+        // happens when all the other async stuff is done
+        setTimeout(() => {
+          (async () => {
+            setTimeout(() => {
+              log(logsym.warning, 'Exiting now!')
+              require('exeunt')(0)
+            }, 50)
+          })()
+        }, 0)
+      }
+    })
   }
 
   /**
@@ -238,11 +275,12 @@ module.exports = class Database {
    * them from disk or using the cache.
    *
    */
-  saveData () {
+  saveData (callback = null) {
     if (this.writes > this.writesToSave ||
         (this.writes > 0 &&
-          Date.now() - this.lastWrite > this.deltaTimeToSave)) {
-      new Promise((resolve, reject) => {
+          Date.now() - this.lastWrite > this.deltaTimeToSave) ||
+        this.forceSave) {
+      return new Promise((resolve, reject) => {
         log('Saving data')
         for (let tableName in this.tables) {
           log(' ', chalk.blue.bold(figures.arrowRight), tableName)
@@ -318,9 +356,14 @@ module.exports = class Database {
         resolve()
       }).then(() => {
         log('Data saved successfully')
-        this.setTimeoutForSaveData()
+        if (this.forceSave) {
+          this.forceSave = false
+        } else if (!this.noMoreSaves) {
+          this.setTimeoutForSaveData()
+        }
+        if (callback) callback()
       }).catch(err => errlog(err))
-    } else {
+    } else if (!this.noMoreSaves) {
       this.setTimeoutForSaveData()
     }
   }

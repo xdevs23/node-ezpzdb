@@ -16,7 +16,7 @@ const util = require('util')
  * This is the DEFAULT value. You can specify a custom value
  * when creating a new instance.
  */
-const SAVE_DATA_INTERVAL_MS = 6 * 1000 // 1 minute
+const SAVE_DATA_INTERVAL_MS = 60 * 1000 // 1 minute
 
 function log (...messages) {
   process.stdout.write('[ezpzdb] ')
@@ -71,7 +71,7 @@ module.exports = class Database {
   constructor (
     dbpath = 'database',
     writesToSave = 200,
-    deltaTimeToSave = 0.5, // in minutes
+    deltaTimeToSave = 10, // in minutes
     saveDataInterval = SAVE_DATA_INTERVAL_MS, // in milliseconds
   ) {
     // In-memory storage of inserts/updates/removals as well

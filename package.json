@@ -13,5 +13,7 @@
     "mkdir-p": "^0.0.7",
     "n-readlines": "^0.2.8"
   },
-  "optionalDependencies": {}
+  "optionalDependencies": {
+    "mocha": "^5.0.4"
+  }
 }

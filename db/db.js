@@ -444,66 +444,68 @@ module.exports = class Database {
      return true
    }
 
-   /**
-    * Remove an entry from the given table
-    * tableName - Name of the table to remove the entry from
-    * id - ID of the entry to remove
-    */
-   remove (tableName, id) {
-     if (!this.tableExists(tableName)) {
-       throw Error(`Can't remove entries from non-existent table ${tableName}`)
-     }
+  /**
+   * Remove an entry from the given table
+   * tableName - Name of the table to remove the entry from
+   * id - ID of the entry to remove
+   */
+  remove (tableName, id) {
+    if (!this.tableExists(tableName)) {
+      throw Error(`Can't remove entries from non-existent table ${tableName}`)
+    }
 
-     let table = this.tables[tableName]
-     let insertIx = table.inserts.findIndex(item => {
-       return item.id === id
-     })
-     if (insertIx !== -1) {
-       table.inserts.splice(insertIx, 1)
-     } else {
-       let updateIx = table.updates.findIndex(item => {
-         return item.id === id
-       })
-       if (updateIx !== -1) {
-         table.updates.splice(updateIx, 1)
-       } else {
-         table.removals.push(id)
-       }
-     }
-     this.writes++
-     if (table.cache[`i${id}`]) {
-       table.cache[`i${id}`] = null
-     }
-     return true
-   }
+    let table = this.tables[tableName]
+    let insertIx = table.inserts.findIndex(item => {
+      return item.id === id
+    })
+    if (insertIx !== -1) {
+      table.inserts.splice(insertIx, 1)
+    } else {
+      let updateIx = table.updates.findIndex(item => {
+        return item.id === id
+      })
+      if (updateIx !== -1) {
+        table.updates.splice(updateIx, 1)
+      } else {
+        table.removals.push(id)
+      }
+    }
+    this.writes++
+    if (table.cache[`i${id}`]) {
+      table.cache[`i${id}`] = null
+    }
+    return true
+  }
 
-   /**
-    * Truncate the given table
-    * tableName - Name of the table to truncate
-    * start - Anything bigger than this ID is removed
-    */
-   truncate (tableName, start) {
-     if (!this.tableExists(tableName)) {
-       throw Error(`Can't truncate non-existent table ${tableName}`)
-     } else if (start > table.lastId) {
-       throw Error(`Specified trim position ${start} is bigger than last ID ` +
-                   `${table.lastId} Make sure it is in bounds.`)
-     }
+  /**
+   * Truncate the given table
+   * tableName - Name of the table to truncate
+   * start - Anything bigger than this ID is removed
+   */
+  truncate (tableName, start) {
+    if (!this.tableExists(tableName)) {
+      throw Error(`Can't truncate non-existent table ${tableName}`)
+    }
 
-     let table = this.tables[tableName]
-     [table.inserts, table.removals, table.updates].forEach(
-       ops => ops.forEach(item => {
-         if (item.id > start) {
-           ops.splice(ops.indexOf(item), 1)
-         }
-       })
-     )
+    let table = this.tables[tableName]
+    if (start > table.lastId) {
+      throw Error(`Specified trim position ${start} is bigger than last ID ` +
+                  `${table.lastId} Make sure it is in bounds.`)
+    }
 
-     table.truncate = start
-     table.lastId = start
-     this.writes++
-     table.cache = {}
-     return true
+    [table.inserts, table.removals, table.updates].forEach(
+        ops => ops.forEach(item => {
+        if (item.id > start) {
+          ops.splice(ops.indexOf(item), 1)
+        }
+      })
+    )
+
+    table.truncate = start
+    table.lastId = start
+    this.writes++
+    table.cache = {}
+    return true
    }
 
    get (tableName, id, fd = null) {
@@ -532,7 +534,7 @@ module.exports = class Database {
                cacheItem.timesUsed++
              }
              return cacheItem.item
-           } else {
+           } else if (fs.existsSync(this.paths.tablefile(tableName))) {
              let fdWasNull = false
              if (fd === null) {
                fd = fs.openSync(this.paths.tablefile(tableName), 'r')
@@ -561,18 +563,22 @@ module.exports = class Database {
      return null
    }
 
-   getAll (tableName) {
-     if (!this.tableExists(tableName)) {
-       throw Error(`Cannot get all from non-existent table ${tableName}`)
-     }
-
-     let fd = fs.openSync(this.paths.tablefile(tableName), 'r')
-     let allitems = []
-     for (let id in this.tables[tableName].index) {
-       allitems.push(this.get(tableName, id, fd))
-     }
-     fs.closeSync(fd)
-     return allitems
-   }
+  getAll (tableName) {
+    if (!this.tableExists(tableName)) {
+      throw Error(`Cannot get all from non-existent table ${tableName}`)
+    }
+    let allitems = []
+    let fd = null
+    if (fs.existsSync(this.paths.tablefile(tableName))) {
+      let fd = fs.openSync(this.paths.tablefile(tableName), 'r')
+    }
+    for (let id in this.tables[tableName].index) {
+      allitems.push(this.get(tableName, id, fd))
+    }
+    if (fd !== null) {
+      fs.closeSync(fd)
+    }
+    return allitems
+  }
 
 }

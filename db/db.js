@@ -423,26 +423,26 @@ module.exports = class Database {
    * tableName - Name of the table to insert the entry into
    * data - Updated entry as a key-value object
    */
-   update (tableName, data) {
-     if (!this.tableExists(tableName)) {
-       throw Error(`Can't update entries in non-existent table ${tableName}`)
-     }
+  update (tableName, data) {
+    if (!this.tableExists(tableName)) {
+      throw Error(`Can't update entries in non-existent table ${tableName}`)
+    }
 
-     let table = this.tables[tableName]
-     let insertIx = table.inserts.findIndex(item => {
-       return item.id === data.id
-     })
-     if (insertIx !== -1) {
-       Object.assign(table.inserts[insertIx], data)
-     } else {
-       table.updates.push(data)
-     }
-     this.writes++
-     if (table.cache[`i${data.id}`]) {
-       table.cache[`i${data.id}`] = null
-     }
-     return true
-   }
+    let table = this.tables[tableName]
+    let insertIx = table.inserts.findIndex(item => {
+      return item.id === data.id
+    })
+    if (insertIx !== -1) {
+      Object.assign(table.inserts[insertIx], data)
+    } else {
+      table.updates.push(data)
+    }
+    this.writes++
+    if (table.cache[`i${data.id}`]) {
+      table.cache[`i${data.id}`] = null
+    }
+    return true
+  }
 
   /**
    * Remove an entry from the given table
@@ -508,60 +508,60 @@ module.exports = class Database {
     return true
    }
 
-   get (tableName, id, fd = null) {
-     if (!this.tableExists(tableName)) {
-       throw Error(`Cannot get ${id} from non-existent table ${tableName}`)
-     }
+  get (tableName, id, fd = null) {
+    if (!this.tableExists(tableName)) {
+      throw Error(`Cannot get ${id} from non-existent table ${tableName}`)
+    }
 
-     let table = this.tables[tableName]
-     let updateIx = table.updates.findIndex(item => {
-       return item.id === id
-     })
-     if (updateIx === -1) {
-       let insertIx = table.inserts.findIndex(item => {
-         return item.id === id
-       })
-       if (insertIx !== -1) {
-         return table.inserts[insertIx]
-       } else {
-         let removalIx = table.removals.findIndex(item => {
-           return item.id === id
-         })
-         if (removalIx === -1) {
-           let cacheItem = table.cache[`i${id}`]
-           if (cacheItem) {
-             if (cacheItem.timesUsed < 100) {
-               cacheItem.timesUsed++
-             }
-             return cacheItem.item
-           } else if (fs.existsSync(this.paths.tablefile(tableName))) {
-             let fdWasNull = false
-             if (fd === null) {
-               fd = fs.openSync(this.paths.tablefile(tableName), 'r')
-               fdWasNull = true
-             }
-             let indexEntry = table.index[id]
-             let buf = new Buffer(indexEntry.len)
-             fs.readSync(fd, buf, 0, indexEntry.len, indexEntry.pos)
-             if (fdWasNull) {
-               fs.closeSync(fd)
-             }
-             let item = JSON.parse(buf)
-             table.cache[`i${id}`] = {
-               item,
-               timesUsed: 1
-             }
-             return item
-           }
-         } else {
-           return null
-         }
-       }
-     } else {
-       return table.updates[updateIx]
-     }
-     return null
-   }
+    let table = this.tables[tableName]
+    let updateIx = table.updates.findIndex(item => {
+      return item.id === id
+    })
+    if (updateIx === -1) {
+      let insertIx = table.inserts.findIndex(item => {
+        return item.id === id
+      })
+      if (insertIx !== -1) {
+        return table.inserts[insertIx]
+      } else {
+        let removalIx = table.removals.findIndex(item => {
+          return item.id === id
+        })
+        if (removalIx === -1) {
+          let cacheItem = table.cache[`i${id}`]
+          if (cacheItem) {
+            if (cacheItem.timesUsed < 100) {
+              cacheItem.timesUsed++
+            }
+            return cacheItem.item
+          } else if (fs.existsSync(this.paths.tablefile(tableName))) {
+            let fdWasNull = false
+            if (fd === null) {
+              fd = fs.openSync(this.paths.tablefile(tableName), 'r')
+              fdWasNull = true
+            }
+            let indexEntry = table.index[id]
+            let buf = new Buffer(indexEntry.len)
+            fs.readSync(fd, buf, 0, indexEntry.len, indexEntry.pos)
+            if (fdWasNull) {
+              fs.closeSync(fd)
+            }
+            let item = JSON.parse(buf)
+            table.cache[`i${id}`] = {
+              item,
+              timesUsed: 1
+            }
+            return item
+          }
+        } else {
+          return null
+        }
+      }
+    } else {
+      return table.updates[updateIx]
+    }
+    return null
+  }
 
   getAll (tableName) {
     if (!this.tableExists(tableName)) {

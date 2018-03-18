@@ -17,6 +17,6 @@
     "mocha": "^5.0.4"
   },
   "scripts": {
-    "test": "mocha; rm -rf testdb"
+    "test": "rm -rf testdb; mocha"
   }
 }

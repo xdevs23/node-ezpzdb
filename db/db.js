@@ -67,12 +67,15 @@ module.exports = class Database {
    *                   even below the treshold in reasonable time.
    * saveDataInterval - Milliseconds to wait until checking if data
    *                    should be written out.
+   * cacheCollectInterval - Seconds to wait until unused items in the cache
+   *                        are removed.
    */
   constructor (
     dbpath = 'database',
     writesToSave = 200,
     deltaTimeToSave = 10, // in minutes
-    saveDataInterval = SAVE_DATA_INTERVAL_MS, // in milliseconds
+    saveDataInterval = SAVE_DATA_INTERVAL_MS, // in milliseconds,
+    cacheCollectInterval = 30 // in seconds
   ) {
     // In-memory storage of inserts/updates/removals as well
     // as miscellaneous metadata and information like last ID
@@ -97,6 +100,7 @@ module.exports = class Database {
     this.writesToSave = writesToSave
     this.deltaTimeToSave = deltaTimeToSave * 60 * 1000
     this.saveDataInterval = saveDataInterval
+    this.cacheCollectInterval = cacheCollectInterval * 1000
     // Paths
     let paths = this.paths = {
       tableindex (table) {
@@ -119,6 +123,8 @@ module.exports = class Database {
     this.initialize()
     // Now start the timer for data saves
     this.setTimeoutForSaveData()
+    // And the timer for the cache
+    this.setTimeoutForCache()
   }
 
   /**
@@ -160,6 +166,43 @@ module.exports = class Database {
     setTimeout(this.saveData.bind(this), this.saveDataInterval)
   }
 
+  setTimeoutForCache () {
+    setTimeout(this.collectCache.bind(this), this.cacheCollectInterval)
+  }
+
+  /**
+   * Remove items from the cache that are considered unused.
+   * Every cache entry has a timesUsed attribute which indicates
+   * how likely it is for that item to be used again.
+   * Every time it is used, timesUsed will be incremented.
+   * When collectCache is invoked, it will check in which cache
+   * entries timesUsed is equal to 0, and if that is true, it will
+   * remove that from the cache. Otherwise timesUsed will be decremented.
+   */
+  collectCache () {
+    log(logsym.info, 'Starting cache collection')
+    let itemsCleared = 0
+    let newTotal = 0
+    for (let tableName in this.tables) {
+      for (let id in this.tables[tableName].cache) {
+        let cacheEntry = this.tables[tableName].cache[id]
+        if (!cacheEntry) continue
+        if (cacheEntry.timesUsed === 0) {
+          delete this.tables[tableName].cache[id]
+          itemsCleared++
+        } else {
+          cacheEntry.timesUsed--
+        }
+      }
+      newTotal += Object.keys(this.tables[tableName].cache).length
+    }
+    log(logsym.success,
+      `Cache collection done, removed ${itemsCleared} items, new total: ` +
+      newTotal
+      )
+    this.setTimeoutForCache()
+  }
+
   /**
    * Call this periodically (i. e. every minute) to
    * write new data to disk (writing new data includes
@@ -167,19 +210,17 @@ module.exports = class Database {
    *
    * Data saving is done in following order and will be
    * repeated for every table:
-   *  - truncate
-   *  - remove
-   *  - update
+   *  - truncate, remove and update
    *  - insert
    *
-   * Truncations are done first so that any inserts
+   * Truncations are done before insert so that any inserts
    * after that get to use a lower ID than what it would
    * have been without truncating. By looking at the truncate
    * function you can also see that lastId is set to start,
    * which implies that when actually saving the data, the ID
    * corresponds to the one returned at that point of time.
    *
-   * Order of insert/update/remove does NOT matter because they
+   * Order of truncate/update/remove does NOT matter because they
    * present the state of data as it is when this function is invoked.
    * For example, removing an entry that is in the inserts array
    * and thus has not been saved yet will remove it from the
@@ -354,6 +395,9 @@ module.exports = class Database {
        table.updates.push(data)
      }
      this.writes++
+     if (table.cache[`i${data.id}`]) {
+       table.cache[`i${data.id}`] = null
+     }
      return true
    }
 
@@ -384,6 +428,9 @@ module.exports = class Database {
        }
      }
      this.writes++
+     if (table.cache[`i${id}`]) {
+       table.cache[`i${id}`] = null
+     }
      return true
    }
 
@@ -412,10 +459,11 @@ module.exports = class Database {
      table.truncate = start
      table.lastId = start
      this.writes++
+     table.cache = {}
      return true
    }
 
-   get (tableName, id) {
+   get (tableName, id, fd = null) {
      if (!this.tableExists(tableName)) {
        throw Error(`Cannot get ${id} from non-existent table ${tableName}`)
      }
@@ -426,7 +474,7 @@ module.exports = class Database {
      })
      if (updateIx === -1) {
        let insertIx = table.inserts.findIndex(item => {
-         return item.id === data.id
+         return item.id === id
        })
        if (insertIx !== -1) {
          return table.inserts[insertIx]
@@ -435,7 +483,31 @@ module.exports = class Database {
            return item.id === id
          })
          if (removalIx === -1) {
-
+           let cacheItem = table.cache[`i${id}`]
+           if (cacheItem) {
+             if (cacheItem.timesUsed < 100) {
+               cacheItem.timesUsed++
+             }
+             return cacheItem.item
+           } else {
+             let fdWasNull = false
+             if (fd === null) {
+               fd = fs.openSync(this.paths.tablefile(tableName), 'r')
+               fdWasNull = true
+             }
+             let indexEntry = table.index[id]
+             let buf = new Buffer(indexEntry.len)
+             fs.readSync(fd, buf, 0, indexEntry.len, indexEntry.pos)
+             if (fdWasNull) {
+               fs.closeSync(fd)
+             }
+             let item = JSON.parse(buf)
+             table.cache[`i${id}`] = {
+               item,
+               timesUsed: 1
+             }
+             return item
+           }
          } else {
            return null
          }
@@ -451,8 +523,13 @@ module.exports = class Database {
        throw Error(`Cannot get all from non-existent table ${tableName}`)
      }
 
-     let table = this.tables[tableName]
-     return table.inserts.concat(table.updates)
+     let fd = fs.openSync(this.paths.tablefile(tableName), 'r')
+     let allitems = []
+     for (let id in this.tables[tableName].index) {
+       allitems.push(this.get(tableName, id, fd))
+     }
+     fs.closeSync(fd)
+     return allitems
    }
 
 }

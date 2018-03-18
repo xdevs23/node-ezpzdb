@@ -18,7 +18,7 @@ First add it to your node modules.
 
 Now an example:
 
-```
+```javascript
 // Create a database instance
 // It does not exist on disk, yet.
 // It will be created on disk as soon as data is saved

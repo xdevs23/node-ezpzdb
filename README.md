@@ -15,6 +15,16 @@ and give feedback on it.
 ### How to use this?
 
 First add it to your node modules.
+Since it hasn't been released on npm and you added it manually,
+do this:
+
+```
+cd node_modules/ezpzdb
+yarn install
+cd ../..
+```
+
+You can also use npm, whatever you like.
 
 Now an example:
 
